@@ -1,0 +1,4 @@
+id,name,status,temp,last_maintenance,History,faults,tools
+M001,Hydraulic Press,Operational,42,2026-06-20,"2025-11-05,2026-01-12,2026-04-28","Pressure Drop,Seal Leakage","Wrench,Pressure Gauge"
+M002,CNC Lathe,Maintenance Required,68,2026-05-15,"2025-09-10,2026-01-22,2026-04-03","Overheating,Tool Wear","Allen Key,Coolant"
+M003,Drilling Unit,Operational,35,2026-07-01,"2025-12-01,2026-03-22,2026-06-18","Bit Breakage,Motor Noise","Drill Bits,Oil Can"
