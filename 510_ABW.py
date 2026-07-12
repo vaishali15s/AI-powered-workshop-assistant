@@ -138,6 +138,41 @@ def render_summary_card(title: str, value: str, subtitle: str):
     )
 
 
+def generate_assistant_response(query: str, row: pd.Series) -> str:
+    query_text = query.lower().strip()
+    machine_name = str(row[machine_type_col])
+    defect_name = str(row[defect_col])
+    defect_text = defect_name.lower()
+
+    if not query_text:
+        return f"Ask about {machine_name}, the defect, probable checks, or maintenance steps."
+
+    if any(keyword in query_text for keyword in ["what", "issue", "problem", "defect"]):
+        return f"The record shows {machine_name} with the reported defect: {defect_name}."
+
+    if any(keyword in query_text for keyword in ["fix", "repair", "resolve", "how"]):
+        if "electrical" in defect_text:
+            return "Inspect power supply, wiring, fuses, connectors, and control circuits. Verify safe isolation before testing."
+        if "mechanical" in defect_text or "leak" in defect_text:
+            return "Check belts, bearings, seals, moving parts, and hydraulic or fluid lines for wear or leakage."
+        if "service" in defect_text or "calibration" in defect_text:
+            return "Schedule preventive maintenance, verify calibration, and complete the service log after inspection."
+        return "Review the defect note, isolate the machine, and follow the maintenance checklist for the reported issue."
+
+    if any(keyword in query_text for keyword in ["priority", "urgent", "severity"]):
+        if "not working" in defect_text or "electrical" in defect_text:
+            return "This looks high priority because it affects machine availability and could indicate a power or functional failure."
+        return "Treat it as a maintenance priority based on operational impact and the equipment condition on the report."
+
+    if any(keyword in query_text for keyword in ["date", "when"]):
+        return f"The issue was recorded on {row[date_col]}."
+
+    return (
+        f"For {machine_name}, the current record notes '{defect_name}'. "
+        "You can ask for probable checks, repair guidance, or priority assessment."
+    )
+
+
 df = load_data()
 
 st.sidebar.title("Workshop Filters")
@@ -212,6 +247,18 @@ if selected_row is not None:
             st.write("Schedule preventive maintenance, calibrate the machine, and record the service completion.")
         else:
             st.write("Review the defect note and confirm the machine condition with the maintenance team.")
+
+        st.divider()
+        st.subheader("AI Technical Assistant")
+        assistant_query = st.text_input(
+            "Ask about the selected record",
+            placeholder="Example: How do I fix this issue?",
+            key=f"assistant_query_{selected_row[work_order_col]}",
+        )
+        if assistant_query:
+            st.info(generate_assistant_response(assistant_query, selected_row))
+        else:
+            st.caption("Try questions like: What is the defect, how do I fix it, or is it urgent?")
 
     with right_col:
         st.markdown(
