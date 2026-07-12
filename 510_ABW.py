@@ -1,11 +1,10 @@
-import random
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 
-st.set_page_config(page_title="Intelligent Workshop Assistant", layout="wide")
+st.set_page_config(page_title="Workshop Defect Dashboard", layout="wide")
 
 st.markdown(
     """
@@ -120,27 +119,19 @@ st.markdown(
 
 @st.cache_data
 def load_data():
-    csv_path = Path(__file__).with_name("machine.csv")
-    return pd.read_csv(csv_path)
+    csv_path = Path(__file__).with_name("workshop.csv")
+    data = pd.read_csv(csv_path)
+    data.columns = [column.strip() for column in data.columns]
+    return data
 
 
-def render_temperature_gauge(value: int, min_value: int = 0, max_value: int = 100):
-    bounded_value = max(min_value, min(value, max_value))
-    ratio = (bounded_value - min_value) / (max_value - min_value)
-    angle = -90 + (ratio * 180)
-
+def render_summary_card(title: str, value: str, subtitle: str):
     st.markdown(
         f"""
         <div class="industrial-card">
-            <div class="gauge-wrap">
-                <div class="gauge-shell">
-                    <div class="gauge-needle" style="transform: translateX(-50%) rotate({angle}deg);"></div>
-                    <div class="gauge-center">
-                        <div class="gauge-value">{bounded_value}°C</div>
-                        <div class="gauge-subtitle">Live Temperature Gauge</div>
-                    </div>
-                </div>
-            </div>
+            <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #b9c2ca;">{title}</div>
+            <div style="font-size: 2rem; font-weight: 800; margin-top: 0.35rem; color: #dfffa4;">{value}</div>
+            <div style="font-size: 0.9rem; color: #c7ced5; margin-top: 0.1rem;">{subtitle}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -149,47 +140,104 @@ def render_temperature_gauge(value: int, min_value: int = 0, max_value: int = 10
 
 df = load_data()
 
-st.sidebar.title("🛠 Workshop Access")
-m_id = st.sidebar.text_input("Enter Machine ID")
+st.sidebar.title("Workshop Filters")
 
-st.title("🤖 Intelligent Workshop Assistant")
+work_order_col = "DEME NO."
+machine_type_col = "TYPE OF MACHINE"
+defect_col = "NATURE OF DEFECT"
+date_col = "DATE"
 
-if m_id:
-    machine_info = df[df["id"].astype(str) == m_id]
+search_term = st.sidebar.text_input("Search by Deme No. or machine type")
 
-    if not machine_info.empty:
-        data = machine_info.iloc[0]
-        st.header(f"Machine: {data['name']}")
+filtered_df = df.copy()
+if search_term:
+    search_mask = (
+        filtered_df[work_order_col].astype(str).str.contains(search_term, case=False, na=False)
+        | filtered_df[machine_type_col].astype(str).str.contains(search_term, case=False, na=False)
+        | filtered_df[defect_col].astype(str).str.contains(search_term, case=False, na=False)
+    )
+    filtered_df = filtered_df[search_mask]
 
-        live_temp = int(data["temp"]) + random.randint(-2, 2)
+selected_row = None
+if not filtered_df.empty:
+    selected_label = st.sidebar.selectbox(
+        "Choose a record",
+        filtered_df.apply(
+            lambda row: f"{row[work_order_col]} | {row[machine_type_col]}", axis=1
+        ).tolist(),
+    )
+    selected_row = filtered_df[
+        filtered_df.apply(
+            lambda row: f"{row[work_order_col]} | {row[machine_type_col]}", axis=1
+        ) == selected_label
+    ].iloc[0]
 
-        col1, col2 = st.columns(2)
-        col1.metric("Live Temperature", f"{live_temp}°C")
-        col2.metric("Status", data["status"])
+st.title("Workshop Defect Dashboard")
+st.caption("Browse maintenance records from workshop.csv and inspect defect details quickly.")
 
-        render_temperature_gauge(live_temp)
+summary_col1, summary_col2, summary_col3 = st.columns(3)
+summary_col1.metric("Total Records", f"{len(df)}")
+summary_col2.metric("Filtered Records", f"{len(filtered_df)}")
+summary_col3.metric("Unique Machines", f"{df[machine_type_col].nunique()}")
 
-        st.write(f"**Last Maintenance:** {data['last_maintenance']}")
-        st.info(f"**Required Tools:** {data['tools']}")
+if selected_row is not None:
+    st.header(f"Record: {selected_row[work_order_col]}")
 
-        history_values = [item.strip() for item in str(data.get("History", "")).split(",") if item.strip()]
-        if history_values:
-            st.markdown("**Maintenance History:**")
-            st.markdown("<ul class='history-list'>" + "".join(f"<li>{item}</li>" for item in history_values) + "</ul>", unsafe_allow_html=True)
+    left_col, right_col = st.columns([1.15, 0.85])
+    with left_col:
+        st.markdown(
+            f"""
+            <div class="industrial-card">
+                <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #b9c2ca;">Machine Type</div>
+                <div style="font-size: 2rem; font-weight: 800; margin-top: 0.35rem; color: #dfffa4;">{selected_row[machine_type_col]}</div>
+                <div style="font-size: 0.95rem; color: #c7ced5; margin-top: 0.45rem;">Nature of defect: {selected_row[defect_col]}</div>
+                <div style="font-size: 0.95rem; color: #c7ced5; margin-top: 0.2rem;">Date: {selected_row[date_col]}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("**Quick context**")
+        st.write(
+            f"This record links {selected_row[machine_type_col]} to the reported defect '{selected_row[defect_col]}' on {selected_row[date_col]}."
+        )
 
         st.divider()
-        st.subheader("🤖 AI Technical Assistant")
+        st.subheader("Suggested Technician Notes")
+        defect_text = str(selected_row[defect_col]).lower()
+        if "electrical" in defect_text:
+            st.write("Check power supply, wiring continuity, connectors, and breakers before restarting the unit.")
+        elif "mechanical" in defect_text or "leak" in defect_text:
+            st.write("Inspect moving parts, seals, belts, bearings, and hydraulic lines for wear or leakage.")
+        elif "service" in defect_text or "calibration" in defect_text:
+            st.write("Schedule preventive maintenance, calibrate the machine, and record the service completion.")
+        else:
+            st.write("Review the defect note and confirm the machine condition with the maintenance team.")
 
-        user_query = st.text_input("Ask something about the machine (e.g., 'How to fix pressure leak?')")
+    with right_col:
+        st.markdown(
+            f"""
+            <div class="industrial-card">
+                <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #b9c2ca;">Report Snapshot</div>
+                <div style="margin-top: 0.75rem;">
+                    <div style="color: #c7ced5; font-size: 0.9rem;">Deme No.</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f2f5f7; margin-bottom: 0.5rem;">{selected_row[work_order_col]}</div>
+                    <div style="color: #c7ced5; font-size: 0.9rem;">Machine Type</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f2f5f7; margin-bottom: 0.5rem;">{selected_row[machine_type_col]}</div>
+                    <div style="color: #c7ced5; font-size: 0.9rem;">Defect</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f2f5f7; margin-bottom: 0.5rem;">{selected_row[defect_col]}</div>
+                    <div style="color: #c7ced5; font-size: 0.9rem;">Date</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #f2f5f7;">{selected_row[date_col]}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        if user_query:
-            if "pressure" in user_query.lower() or "leak" in user_query.lower():
-                st.write("AI Assistant: For the hydraulic press, check the 'Pressure Gauge' and tighten the 'Seal'.")
-            elif "start" in user_query.lower():
-                st.write("AI Assistant: To start the machine, first turn ON the Main Power Switch.")
-            else:
-                st.write("AI Assistant: Let me check the manual for this and get back to you...")
-    else:
-        st.error("Machine ID not found!")
+        top_defects = filtered_df[defect_col].value_counts().head(5)
+        st.markdown("**Top defects in the current view**")
+        if not top_defects.empty:
+            st.bar_chart(top_defects)
+        else:
+            st.info("No matching records for the current filter.")
 else:
-    st.info("👈 Please enter a Machine ID in the sidebar to load the dashboard.")
+    st.info("Use the sidebar to search by Deme No., machine type, or defect.")
