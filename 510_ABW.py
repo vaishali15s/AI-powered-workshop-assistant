@@ -1,5 +1,9 @@
 from pathlib import Path
+import requests
+import time
 
+# Database Endpoint Settings
+FIREBASE_URL = "https://ai-powered-workshop-assistant-default-rtdb.asia-southeast1.firebasedatabase.app/sensor_data.json"
 import pandas as pd
 import streamlit as st
 
@@ -210,6 +214,17 @@ if not filtered_df.empty:
 st.title("Workshop Defect Dashboard")
 st.caption("Browse maintenance records from workshop.csv and inspect defect details quickly.")
 
+# --- Live Data Placeholders ---
+alert_container = st.empty()
+live_col1, live_col2, live_col3 = st.columns(3)
+
+with live_col1:
+    temp_stat = st.empty()
+with live_col2:
+    vibe_stat = st.empty()
+with live_col3:
+    curr_stat = st.empty()
+
 summary_col1, summary_col2, summary_col3 = st.columns(3)
 summary_col1.metric("Total Records", f"{len(df)}")
 summary_col2.metric("Filtered Records", f"{len(filtered_df)}")
@@ -288,3 +303,41 @@ if selected_row is not None:
             st.info("No matching records for the current filter.")
 else:
     st.info("Use the sidebar to search by Deme No., machine type, or defect.")
+
+
+   
+# LIVE DATA TRACKING LOOP
+# This runs continuously at the bottom to fill the placeholders at the top
+
+try:
+    # Connect directly to your Firebase URL to pull the live data
+    response = requests.get(FIREBASE_URL)
+    if response.status_code == 200:
+        data = response.json()
+        
+        if data:
+            # 1. Pull the data values sent by the ESP32
+            live_temp = data.get("temperature", 0.0)
+            live_vibe = data.get("vibration", 0.0)
+            live_curr = data.get("current", 0.0)
+            warning_flag = data.get("warning", False)
+            warning_msg = data.get("message", "System Safe")
+
+            # 2. Update the Alert Banner at the top dynamically
+            if warning_flag:
+                alert_container.error(f"⚠️ ALERT: {warning_msg}")
+            else:
+                alert_container.success("✅ Live Operational Status: All Systems Normal")
+
+            # 3. Inject the live numbers straight into your metric card layout slots
+            if live_temp == -127.00:
+                temp_stat.metric(label="🔴 Live Temperature", value="Sensor Error", delta="Check 4.7k Resistor")
+            else:
+                temp_stat.metric(label="🌡️ Live Temperature", value=f"{live_temp:.1f} °C")
+
+            vibe_stat.metric(label="📳 Live Vibration Magnitude", value=f"{live_vibe:.2f} m/s²")
+            curr_stat.metric(label="⚡ Live AC Current Draw", value=f"{live_curr:.2f} A")
+            
+except Exception as e:
+    # If the internet drops temporarily, fail silently so the dashboard doesn't crash
+    pass
