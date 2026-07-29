@@ -83,8 +83,7 @@ st.markdown(
         height: 92px;
         background: linear-gradient(180deg, #ffe35a 0%, #a7ff2f 100%);
         border-radius: 999px;
-        transform-origin: bottom center;
-        box-shadow: 0 0 10px rgba(167, 255, 47, 0.55);
+        box-shadow: 0 0 10px rgba(34, 211, 238, 0.55);
     }
     .gauge-center {
         position: absolute;
@@ -98,11 +97,11 @@ st.markdown(
         font-size: 2rem;
         font-weight: 800;
         line-height: 1;
-        color: #dfffa4;
+        color: #000000;
     }
     .gauge-subtitle {
         font-size: 0.78rem;
-        color: #b9c2ca;
+        color: #9aa4b2;
         letter-spacing: 0.08em;
         text-transform: uppercase;
         margin-top: 0.25rem;
@@ -111,6 +110,15 @@ st.markdown(
         color: #dfe4e8;
         margin-top: 0.25rem;
         padding-left: 1.15rem;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #e7ebef;
+    }
+    .stButton > button {
+        background: #171b21;
+        color: #e7ebef;
+        border: 1px solid #2f353d;
+        font-weight: 700;
     }
     .history-list li {
         margin-bottom: 0.25rem;
@@ -186,16 +194,19 @@ machine_type_col = "TYPE OF MACHINE"
 defect_col = "NATURE OF DEFECT"
 date_col = "DATE"
 
-search_term = st.sidebar.text_input("Search by Deme No. or machine type")
+available_deme_numbers = sorted(
+    df[work_order_col].dropna().astype(str).unique().tolist()
+)
+selected_deme_no = st.sidebar.selectbox(
+    "Deme No. (click to view list)",
+    options=["All"] + available_deme_numbers,
+    index=0,
+    help="Choose a Deme No. from the list to filter the dashboard.",
+)
 
 filtered_df = df.copy()
-if search_term:
-    search_mask = (
-        filtered_df[work_order_col].astype(str).str.contains(search_term, case=False, na=False)
-        | filtered_df[machine_type_col].astype(str).str.contains(search_term, case=False, na=False)
-        | filtered_df[defect_col].astype(str).str.contains(search_term, case=False, na=False)
-    )
-    filtered_df = filtered_df[search_mask]
+if selected_deme_no != "All":
+    filtered_df = filtered_df[filtered_df[work_order_col].astype(str) == selected_deme_no]
 
 selected_row = None
 if not filtered_df.empty:
@@ -216,14 +227,12 @@ st.caption("Browse maintenance records from workshop.csv and inspect defect deta
 
 # --- Live Data Placeholders ---
 alert_container = st.empty()
-live_col1, live_col2, live_col3 = st.columns(3)
+live_col1, live_col2 = st.columns(2)
 
 with live_col1:
     temp_stat = st.empty()
 with live_col2:
     vibe_stat = st.empty()
-with live_col3:
-    curr_stat = st.empty()
 
 summary_col1, summary_col2, summary_col3 = st.columns(3)
 summary_col1.metric("Total Records", f"{len(df)}")
@@ -319,7 +328,6 @@ try:
             # 1. Pull the data values sent by the ESP32
             live_temp = data.get("temperature", 0.0)
             live_vibe = data.get("vibration", 0.0)
-            live_curr = data.get("current", 0.0)
             warning_flag = data.get("warning", False)
             warning_msg = data.get("message", "System Safe")
 
@@ -336,7 +344,6 @@ try:
                 temp_stat.metric(label="🌡️ Live Temperature", value=f"{live_temp:.1f} °C")
 
             vibe_stat.metric(label="📳 Live Vibration Magnitude", value=f"{live_vibe:.2f} m/s²")
-            curr_stat.metric(label="⚡ Live AC Current Draw", value=f"{live_curr:.2f} A")
             
 except Exception as e:
     # If the internet drops temporarily, fail silently so the dashboard doesn't crash
