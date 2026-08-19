@@ -21,6 +21,12 @@ def load_data():
     data.columns = [column.strip() for column in data.columns]
     return data
 
+data = load_data()
+
+# Define CSV column names
+machine_type_col = "Machine Type" if "Machine Type" in data.columns else data.columns[1]
+defect_col = "Defect" if "Defect" in data.columns else data.columns[2]
+date_col = "Date" if "Date" in data.columns else data.columns[0]
 
 def render_summary_card(title: str, value: str, subtitle: str):
     st.markdown(
@@ -107,77 +113,6 @@ def main():
             padding: 1.1rem 1.2rem;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
         }
-        .gauge-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.35rem;
-            margin: 0.25rem 0 0.5rem;
-        }
-        .gauge-shell {
-            position: relative;
-            width: 280px;
-            height: 155px;
-            overflow: hidden;
-        }
-        .gauge-shell::before {
-            content: "";
-            position: absolute;
-            width: 280px;
-            height: 280px;
-            left: 0;
-            top: 0;
-            border-radius: 50%;
-            background: conic-gradient(from 180deg, #2b3138 0deg, #ffe35a 74deg, #a7ff2f 136deg, #2b3138 180deg);
-            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.35);
-        }
-        .gauge-shell::after {
-            content: "";
-            position: absolute;
-            width: 190px;
-            height: 190px;
-            left: 45px;
-            top: 45px;
-            border-radius: 50%;
-            background: #111418;
-            border: 1px solid #2f353d;
-        }
-        .gauge-needle {
-            position: absolute;
-            left: 50%;
-            bottom: 24px;
-            width: 4px;
-            height: 92px;
-            background: linear-gradient(180deg, #ffe35a 0%, #a7ff2f 100%);
-            border-radius: 999px;
-            box-shadow: 0 0 10px rgba(34, 211, 238, 0.55);
-        }
-        .gauge-center {
-            position: absolute;
-            left: 50%;
-            top: 88px;
-            transform: translateX(-50%);
-            z-index: 2;
-            text-align: center;
-        }
-        .gauge-value {
-            font-size: 2rem;
-            font-weight: 800;
-            line-height: 1;
-            color: #000000;
-        }
-        .gauge-subtitle {
-            font-size: 0.78rem;
-            color: #9aa4b2;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-top: 0.25rem;
-        }
-        .history-list {
-            color: #dfe4e8;
-            margin-top: 0.25rem;
-            padding-left: 1.15rem;
-        }
         h1, h2, h3, h4, h5, h6 {
             color: #e7ebef;
         }
@@ -186,9 +121,6 @@ def main():
             color: #e7ebef;
             border: 1px solid #2f353d;
             font-weight: 700;
-        }
-        .history-list li {
-            margin-bottom: 0.25rem;
         }
         </style>
         """,
@@ -232,18 +164,40 @@ def main():
             ) == selected_label
         ].iloc[0]
 
-    st.title("Workshop Defect Dashboard")
-    st.caption("Browse maintenance records from workshop.csv and inspect defect details quickly.")
+    st.title("Workshop Defect & Live Monitoring Dashboard")
+    st.caption("Browse maintenance records from workshop.csv and monitor real-time machine telemetry.")
 
-    # --- Live Data Placeholders ---
-    alert_container = st.empty()
-    live_col1, live_col2 = st.columns(2)
+    # --- 📡 LIVE SENSOR TELEMETRY SECTION ---
+    st.subheader("📡 Live Machine Health (ESP32 Stream)")
+    try:
+        response = requests.get(FIREBASE_URL, timeout=4)
+        if response.status_code == 200 and response.json():
+            data = response.json()
+            live_temp = data.get("temperature", 0.0)
+            live_vibe = data.get("vibration", 0.0)
+            warning_flag = data.get("warning", False)
+            warning_msg = data.get("message", "System Safe")
 
-    with live_col1:
-        temp_stat = st.empty()
-    with live_col2:
-        vibe_stat = st.empty()
+            if warning_flag:
+                st.error(f"🚨 ALERT: {warning_msg}")
+            else:
+                st.success("✅ Live Operational Status: All Systems Normal")
 
+            col1, col2 = st.columns(2)
+            if live_temp == -127.00:
+                col1.metric(label="🔴 Live Temperature", value="Sensor Error", delta="Check 4.7k Resistor")
+            else:
+                col1.metric(label="🌡️ Live Temperature", value=f"{live_temp:.1f} °C")
+
+            col2.metric(label="📳 Live Vibration Magnitude", value=f"{live_vibe:.2f} m/s²")
+        else:
+            st.warning("⚠️ Connected to Firebase endpoint, but no live data payload found.")
+    except Exception as e:
+        st.warning(f"⚠️ Unable to sync live telemetry from Firebase: {e}")
+
+    st.divider()
+
+    # --- SUMMARY METRICS ---
     summary_col1, summary_col2, summary_col3 = st.columns(3)
     summary_col1.metric("Total Records", f"{len(df)}")
     summary_col2.metric("Filtered Records", f"{len(filtered_df)}")
@@ -322,33 +276,6 @@ def main():
                 st.info("No matching records for the current filter.")
     else:
         st.info("Use the sidebar to search by Deme No., machine type, or defect.")
-
-    # LIVE DATA TRACKING LOOP
-    # This runs continuously at the bottom to fill the placeholders at the top
-    try:
-        response = requests.get(FIREBASE_URL, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-
-            if data:
-                live_temp = data.get("temperature", 0.0)
-                live_vibe = data.get("vibration", 0.0)
-                warning_flag = data.get("warning", False)
-                warning_msg = data.get("message", "System Safe")
-
-                if warning_flag:
-                    alert_container.error(f"⚠️ ALERT: {warning_msg}")
-                else:
-                    alert_container.success("✅ Live Operational Status: All Systems Normal")
-
-                if live_temp == -127.00:
-                    temp_stat.metric(label="🔴 Live Temperature", value="Sensor Error", delta="Check 4.7k Resistor")
-                else:
-                    temp_stat.metric(label="🌡️ Live Temperature", value=f"{live_temp:.1f} °C")
-
-                vibe_stat.metric(label="📳 Live Vibration Magnitude", value=f"{live_vibe:.2f} m/s²")
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":
